@@ -12,13 +12,13 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Urthella/webhook-relay/verify"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -110,17 +110,6 @@ func endpointFor(t *testing.T, s *Store, url string) Endpoint {
 	return e
 }
 
-func TestSignatureMatchesTheStandardWebhooksExample(t *testing.T) {
-	// The example published with the Standard Webhooks and Svix documentation.
-	got, err := sign("whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw", "msg_p5jXN8AQM9LWM0D4loKWxJek", time.Unix(1614265330, 0), []byte(`{"test": 2432232314}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if want := "v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE="; got != want {
-		t.Fatalf("got %s, want %s", got, want)
-	}
-}
-
 func TestDeliversASignedMessage(t *testing.T) {
 	s := newStore(t)
 	var got atomic.Pointer[http.Request]
@@ -139,16 +128,8 @@ func TestDeliversASignedMessage(t *testing.T) {
 	if r.Header.Get("webhook-id") != id {
 		t.Errorf("webhook-id %q", r.Header.Get("webhook-id"))
 	}
-	ts, err := strconv.ParseInt(r.Header.Get("webhook-timestamp"), 10, 64)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want, err := sign(e.Secret, id, time.Unix(ts, 0), *gotBody.Load())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if r.Header.Get("webhook-signature") != want {
-		t.Errorf("signature %q, want %q", r.Header.Get("webhook-signature"), want)
+	if err := verify.Request(e.Secret, r.Header, *gotBody.Load()); err != nil {
+		t.Errorf("the receiver's check refused it: %v", err)
 	}
 	var body struct {
 		Type string          `json:"type"`

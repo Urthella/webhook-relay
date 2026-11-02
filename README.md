@@ -56,7 +56,24 @@ webhook-signature: v1,FwF...
 {"type":"order.paid","timestamp":"2026-11-02T20:22:07Z","data":{"order":42}}
 ```
 
-The signature is an HMAC-SHA256 over `id.timestamp.body`, so any Standard Webhooks library can verify it.
+The signature is an HMAC-SHA256 over `id.timestamp.body`, so any Standard Webhooks library can verify it,
+including the `verify` package in this repo for Go receivers:
+
+```go
+body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+if err != nil {
+	http.Error(w, "body too large", http.StatusRequestEntityTooLarge)
+	return
+}
+if err := verify.Request(secret, r.Header, body); err != nil {
+	http.Error(w, "bad signature", http.StatusUnauthorized)
+	return
+}
+```
+
+It compares in constant time, refuses timestamps more than 5 minutes off to limit replays, and accepts any of
+several signatures so senders can rotate secrets.
+
 The ID stays the same across retries, which is what a receiver deduplicates on. The timestamp is the
 attempt's, so each retry has a new signature.
 
@@ -115,7 +132,7 @@ workers sharing 300 messages with none sent twice, a stale worker that can't ove
 shutdown during a delivery. The signature test uses the example from the Standard Webhooks libraries' own
 tests.
 
-To check that the tests can fail, 19 bugs were planted one at a time, and all 19 got caught, including a
+To check that the tests can fail, 25 bugs were planted one at a time, and all 25 got caught, including a
 dialer that doesn't check addresses, ignored leases and a signature missing the message ID. One real bug
 turned up while running the program itself: on shutdown, the database pool closed before deliveries in
 progress could record their results. There's now a test for that.
