@@ -10,6 +10,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/Urthella/webhook-relay/verify"
 )
 
 // Worker delivers due messages.
@@ -101,7 +103,8 @@ func (w *Worker) deliver(ctx context.Context, c claim) {
 func (w *Worker) send(ctx context.Context, c claim) (int, time.Duration, error) {
 	body := []byte(c.Body)
 	at := time.Now()
-	signature, err := sign(c.Secret, c.ID, at, body)
+	// The timestamp is the attempt's, so a retry has a new signature over the same message ID.
+	signature, err := verify.Sign(c.Secret, c.ID, at, body)
 	if err != nil {
 		return 0, 0, err
 	}
